@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { demoLogin } from '../controllers/auth.controller';
+import { demoLogin, register } from '../controllers/auth.controller';
 
 export const authRouter = Router();
 
@@ -9,3 +9,10 @@ export const authRouter = Router();
  * Returns a simple user object (demo auth — no JWT for simplicity).
  */
 authRouter.post('/demo-login', demoLogin);
+
+/**
+ * POST /api/auth/register
+ * Creates a new user account with email + password.
+ */
+authRouter.post('/register', register);
+

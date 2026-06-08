@@ -54,7 +54,7 @@ function computeWeeklyAverages(
   weightHistory: ProgressRow[]
 ): { avgLast7: number; avgPrev7: number } {
   const today = new Date();
-  const sorted = [...weightHistory].sort((a, b) => b.date.localeCompare(a.date));
+  const sorted = [...weightHistory].sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
   const last7 = sorted.filter((e) => {
     const diff = (today.getTime() - new Date(e.date).getTime()) / (1000 * 60 * 60 * 24);

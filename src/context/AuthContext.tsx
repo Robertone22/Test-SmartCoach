@@ -15,6 +15,7 @@ interface AuthContextType {
   user: ApiUser | null;
   isLoadingAuth: boolean;
   login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -37,13 +38,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(apiUser);
   };
 
+  const register = async (email: string, password: string) => {
+    const apiUser = await authApi.register(email, password);
+    localAuth.save(apiUser);
+    setUser(apiUser);
+  };
+
   const logout = async () => {
     localAuth.clear();
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoadingAuth, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoadingAuth, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
