@@ -1,171 +1,193 @@
 # AI Agent Workflow
 
-This document describes the workflow of the two SmartCoach AI agents:
+This document describes the workflow of the two SmartCoach AI agents.
 
-* **Workout Coach Agent** — generates personalized workout recommendations.
-* **Nutrition / Progress Agent** — analyzes progress and generates nutrition-oriented feedback.
+SmartCoach includes two product agents:
 
-Both agents can use the **Groq API** when `GROQ_API_KEY` is available. If the API key is missing, the agents still work through a deterministic local fallback, which keeps the demo stable and reproducible.
+* **Workout Coach Agent** — generates workout recommendations.
+* **Nutrition / Progress Agent** — analyzes progress and gives nutrition-oriented feedback.
+
+Both agents support two execution modes:
+
+* **Groq mode** — used when `GROQ_API_KEY` is available.
+* **Local fallback mode** — deterministic response used when no API key is available.
 
 ---
 
 ## Agent 1 — Workout Coach Agent
 
 ```mermaid
-flowchart TD
-    U["User"]
-    FE["WorkoutCoachPage"]
-    API["agents.controller"]
-    PROFILE[("profiles")]
-    WORKOUTS[("workouts")]
-    AGENT["workout-agent.service"]
-    DECISION{"GROQ_API_KEY available?"}
-    GROQ["Groq API"]
-    FALLBACK["Deterministic fallback"]
-    LOGS[("agent_logs")]
-    RESPONSE["WorkoutRecommendation"]
-    UI["Structured workout plan displayed"]
+flowchart LR
+    User["User"]
 
-    U -->|"Selects equipment and constraints"| FE
-    FE -->|"POST /api/agents/workout-coach"| API
+    subgraph Frontend["React frontend"]
+        WorkoutPage["WorkoutCoachPage"]
+        WorkoutResult["Workout plan displayed"]
+    end
 
-    API -->|"Fetch user profile"| PROFILE
-    API -->|"Fetch recent workouts"| WORKOUTS
+    subgraph Backend["Express backend"]
+        AgentsController["agents.controller"]
+        WorkoutService["workout-agent.service"]
+        Decision{"GROQ_API_KEY available?"}
+    end
 
-    PROFILE -->|"User goal, level, profile data"| API
-    WORKOUTS -->|"Recent workout history"| API
+    subgraph Database["PostgreSQL"]
+        Profiles[("profiles")]
+        Workouts[("workouts")]
+        AgentLogs[("agent_logs")]
+    end
 
-    API -->|"generateWorkoutRecommendation(...)"| AGENT
+    subgraph AI["AI generation"]
+        Groq["Groq API"]
+        Fallback["Local deterministic fallback"]
+    end
 
-    AGENT --> DECISION
+    User -->|"Selects equipment and constraints"| WorkoutPage
+    WorkoutPage -->|"POST /api/agents/workout-coach"| AgentsController
 
-    DECISION -->|"Yes"| GROQ
-    GROQ -->|"Structured JSON plan"| AGENT
+    AgentsController -->|"Load user profile"| Profiles
+    AgentsController -->|"Load recent workouts"| Workouts
 
-    DECISION -->|"No"| FALLBACK
-    FALLBACK -->|"Template by goal + volume adaptation"| AGENT
+    Profiles -->|"Goal, level, profile data"| AgentsController
+    Workouts -->|"Workout history"| AgentsController
 
-    AGENT -->|"warmup, mainWorkout, cooldown, weeklyPlan, tips"| RESPONSE
-    RESPONSE --> API
+    AgentsController -->|"Generate recommendation"| WorkoutService
+    WorkoutService --> Decision
 
-    API -->|"Save request and response"| LOGS
-    API -->|"200 OK"| FE
-    FE --> UI
-    UI --> U
+    Decision -->|"Yes"| Groq
+    Decision -->|"No"| Fallback
+
+    Groq -->|"Structured JSON plan"| WorkoutService
+    Fallback -->|"Template plan by goal"| WorkoutService
+
+    WorkoutService -->|"WorkoutRecommendation"| AgentsController
+    AgentsController -->|"Save request and response"| AgentLogs
+    AgentsController -->|"200 OK"| WorkoutPage
+    WorkoutPage --> WorkoutResult
+    WorkoutResult --> User
 ```
 
-### Workflow explanation
+### Workout Coach summary
 
-1. The user selects equipment and constraints in the workout coach page.
-2. The frontend sends a request to the backend endpoint:
-   `POST /api/agents/workout-coach`.
-3. The backend retrieves the user profile and recent workouts from PostgreSQL.
-4. The backend calls the `workout-agent.service`.
-5. If `GROQ_API_KEY` exists, the agent uses Groq to generate a structured recommendation.
-6. If no API key is available, the agent uses deterministic fallback logic.
-7. The response is logged in `agent_logs`.
-8. The frontend displays the generated workout plan.
+The Workout Coach Agent creates a structured workout plan using the user's profile, recent workout history, selected equipment and constraints.
 
-### Main inputs
+The backend endpoint is:
 
-| Input               | Source        |
-| ------------------- | ------------- |
-| User goal           | `profiles`    |
-| Fitness level       | `profiles`    |
-| Available equipment | Frontend form |
-| Constraints         | Frontend form |
-| Recent workouts     | `workouts`    |
+```text
+POST /api/agents/workout-coach
+```
 
-### Main output
+### Main input data
 
-The agent returns a structured workout recommendation containing:
+| Input                  | Source        |
+| ---------------------- | ------------- |
+| User goal              | `profiles`    |
+| Activity level         | `profiles`    |
+| Available equipment    | frontend form |
+| Training constraints   | frontend form |
+| Recent workout history | `workouts`    |
+
+### Main output data
+
+The agent returns a structured recommendation with:
 
 * warmup
 * main workout
 * cooldown
 * weekly plan
 * practical tips
-* generation timestamp
+* generated timestamp
+
+### Execution modes
+
+| Mode                | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| Groq API mode       | Used when `GROQ_API_KEY` exists                    |
+| Local fallback mode | Used when no API key exists                        |
+| Logging             | Each request and response is saved in `agent_logs` |
 
 ---
 
 ## Agent 2 — Nutrition / Progress Agent
 
 ```mermaid
-flowchart TD
-    U["User"]
-    FE["AgentPage"]
-    API["agents.controller"]
-    PROFILE[("profiles")]
-    PROGRESS[("progress_entries")]
-    AGENT["nutrition-agent.service"]
-    CALC["Progress analysis"]
-    GUARDRAILS["Safety guardrails"]
-    DECISION{"GROQ_API_KEY available?"}
-    GROQ["Groq API"]
-    FALLBACK["Deterministic fallback"]
-    LOGS[("agent_logs")]
-    RESPONSE["NutritionRecommendation"]
-    UI["Nutrition feedback displayed"]
+flowchart LR
+    User["User"]
 
-    U -->|"Clicks weekly analysis"| FE
-    FE -->|"POST /api/agents/nutrition-progress"| API
+    subgraph Frontend["React frontend"]
+        AgentPage["AgentPage"]
+        NutritionCard["Nutrition feedback displayed"]
+    end
 
-    API -->|"Fetch user profile"| PROFILE
-    API -->|"Fetch last 14 days of progress"| PROGRESS
+    subgraph Backend["Express backend"]
+        AgentsController["agents.controller"]
+        NutritionService["nutrition-agent.service"]
+        Calculations["Progress and TDEE calculations"]
+        Guardrails["Safety guardrails"]
+        Decision{"GROQ_API_KEY available?"}
+    end
 
-    PROFILE -->|"Goal, activity level, profile data"| API
-    PROGRESS -->|"Weight history"| API
+    subgraph Database["PostgreSQL"]
+        Profiles[("profiles")]
+        Progress[("progress_entries")]
+        AgentLogs[("agent_logs")]
+    end
 
-    API -->|"generateNutritionRecommendation(...)"| AGENT
+    subgraph AI["AI generation"]
+        Groq["Groq API"]
+        Fallback["Local deterministic fallback"]
+    end
 
-    AGENT --> CALC
-    CALC -->|"Average weight trend + TDEE estimate"| GUARDRAILS
+    User -->|"Runs weekly analysis"| AgentPage
+    AgentPage -->|"POST /api/agents/nutrition-progress"| AgentsController
 
-    GUARDRAILS -->|"Minimum calories: 1200 kcal"| DECISION
-    GUARDRAILS -->|"Max adjustment: ±300 kcal"| DECISION
+    AgentsController -->|"Load user profile"| Profiles
+    AgentsController -->|"Load recent progress"| Progress
 
-    DECISION -->|"Yes"| GROQ
-    GROQ -->|"Structured JSON feedback"| AGENT
+    Profiles -->|"Goal and activity level"| AgentsController
+    Progress -->|"Weight history"| AgentsController
 
-    DECISION -->|"No"| FALLBACK
-    FALLBACK -->|"Template feedback + calculated values"| AGENT
+    AgentsController -->|"Generate nutrition feedback"| NutritionService
+    NutritionService --> Calculations
+    Calculations --> Guardrails
+    Guardrails --> Decision
 
-    AGENT -->|"calories, protein, hydration, habits, feedback"| RESPONSE
-    RESPONSE --> API
+    Decision -->|"Yes"| Groq
+    Decision -->|"No"| Fallback
 
-    API -->|"Save request and response"| LOGS
-    API -->|"200 OK"| FE
-    FE --> UI
-    UI --> U
+    Groq -->|"Structured JSON feedback"| NutritionService
+    Fallback -->|"Template feedback with calculated values"| NutritionService
+
+    NutritionService -->|"NutritionRecommendation"| AgentsController
+    AgentsController -->|"Save request and response"| AgentLogs
+    AgentsController -->|"200 OK"| AgentPage
+    AgentPage --> NutritionCard
+    NutritionCard --> User
 ```
 
-### Workflow explanation
+### Nutrition / Progress summary
 
-1. The user runs the weekly nutrition/progress analysis.
-2. The frontend sends a request to the backend endpoint:
-   `POST /api/agents/nutrition-progress`.
-3. The backend retrieves the user profile and the latest progress entries.
-4. The nutrition agent calculates recent weight trends and estimates energy needs.
-5. Safety guardrails are applied before generating the recommendation.
-6. If `GROQ_API_KEY` exists, the agent uses Groq to generate structured feedback.
-7. If no API key is available, the deterministic fallback generates a safe local response.
-8. The response is saved in `agent_logs`.
-9. The frontend displays the nutrition/progress feedback.
+The Nutrition / Progress Agent analyzes recent weight evolution and generates safe progress feedback.
 
-### Main inputs
+The backend endpoint is:
 
-| Input                 | Source                  |
-| --------------------- | ----------------------- |
-| User goal             | `profiles`              |
-| Activity level        | `profiles`              |
-| Weight history        | `progress_entries`      |
-| Recent progress trend | Calculated by service   |
-| User preferences      | Profile / frontend data |
+```text
+POST /api/agents/nutrition-progress
+```
 
-### Main output
+### Main input data
 
-The agent returns a structured nutrition/progress recommendation containing:
+| Input          | Source                |
+| -------------- | --------------------- |
+| User goal      | `profiles`            |
+| Activity level | `profiles`            |
+| Weight history | `progress_entries`    |
+| Recent trend   | calculated in service |
+| TDEE estimate  | calculated in service |
+
+### Main output data
+
+The agent returns structured feedback with:
 
 * progress feedback
 * calorie guidance
@@ -173,73 +195,70 @@ The agent returns a structured nutrition/progress recommendation containing:
 * hydration recommendation
 * habit suggestions
 * safety notes
-* generation timestamp
+* generated timestamp
+
+### Guardrails
+
+| Guardrail          | Rule                                     |
+| ------------------ | ---------------------------------------- |
+| Minimum calories   | At least 1200 kcal per day               |
+| Maximum adjustment | Maximum 300 kcal adjustment              |
+| Medical safety     | No diagnosis or medical treatment advice |
+| Demo safety        | Works even without external API key      |
 
 ---
 
-## Shared agent architecture
+## Shared design
 
 ```mermaid
-flowchart LR
-    FE["React frontend"]
-    API["Express backend"]
-    DB[("PostgreSQL")]
-    A1["Workout Coach Agent"]
-    A2["Nutrition / Progress Agent"]
-    GROQ["Groq API optional"]
-    FB["Local deterministic fallback"]
-    LOGS[("agent_logs")]
+flowchart TD
+    Frontend["React frontend"]
+    Backend["Express backend"]
+    Database[("PostgreSQL database")]
+    Agents["AI agent services"]
+    Groq["Groq API optional"]
+    Fallback["Local deterministic fallback"]
+    Logs[("agent_logs")]
 
-    FE -->|"Agent request"| API
-    API -->|"Read/write data"| DB
+    Frontend -->|"HTTP requests"| Backend
+    Backend -->|"Read and write data"| Database
+    Backend -->|"Run agent logic"| Agents
 
-    API --> A1
-    API --> A2
+    Agents -->|"If API key exists"| Groq
+    Agents -->|"If no API key exists"| Fallback
 
-    A1 -->|"If API key exists"| GROQ
-    A2 -->|"If API key exists"| GROQ
-
-    A1 -->|"If no API key"| FB
-    A2 -->|"If no API key"| FB
-
-    A1 --> LOGS
-    A2 --> LOGS
-
-    API -->|"Structured response"| FE
+    Agents -->|"Save request and response"| Logs
+    Backend -->|"Structured JSON response"| Frontend
 ```
 
 ---
 
-## Guardrails Summary
+## Guardrails summary
 
-| Guardrail / Feature       | Workout Coach Agent         | Nutrition / Progress Agent  |
-| ------------------------- | --------------------------- | --------------------------- |
-| Optional Groq integration | Yes                         | Yes                         |
-| Works without API key     | Yes, deterministic fallback | Yes, deterministic fallback |
-| Structured output         | JSON workout plan           | JSON nutrition feedback     |
-| Request/response logging  | `agent_logs`                | `agent_logs`                |
-| No medical diagnosis      | Yes                         | Yes                         |
-| No dangerous advice       | Yes                         | Yes                         |
-| Uses user profile         | Yes                         | Yes                         |
-| Uses historical data      | Recent workouts             | Progress entries            |
-| Volume adaptation         | Based on activity level     | N/A                         |
-| Minimum calorie rule      | N/A                         | `>= 1200 kcal/day`          |
-| Calorie adjustment cap    | N/A                         | `±300 kcal`                 |
-| Demo-safe behavior        | Yes                         | Yes                         |
+| Feature                    | Workout Coach Agent              | Nutrition / Progress Agent          |
+| -------------------------- | -------------------------------- | ----------------------------------- |
+| Uses backend service       | Yes                              | Yes                                 |
+| Uses PostgreSQL data       | Yes                              | Yes                                 |
+| Optional Groq integration  | Yes                              | Yes                                 |
+| Works without API key      | Yes                              | Yes                                 |
+| Deterministic fallback     | Yes                              | Yes                                 |
+| Structured JSON output     | Yes                              | Yes                                 |
+| Saves request and response | `agent_logs`                     | `agent_logs`                        |
+| No medical diagnosis       | Yes                              | Yes                                 |
+| No dangerous advice        | Yes                              | Yes                                 |
+| Uses profile data          | Yes                              | Yes                                 |
+| Uses history data          | Recent workouts                  | Progress entries                    |
+| Specific safety rule       | Volume adapted by activity level | Minimum calories and adjustment cap |
 
 ---
 
-## Why this design is useful for the MDS demo
+## Why the workflow is demo-safe
 
-The two agents are implemented as backend services, not just frontend text generators. This makes the design easier to test, evaluate and extend.
+The agents are implemented as backend services, not as simple frontend text blocks. This makes the system easier to test, evaluate and extend.
 
-The same LLM provider key can be reused by both agents because the agents are separated by:
+During the MDS demo, the agents can run in two ways:
 
-* different backend endpoints
-* different service files
-* different prompts
-* different inputs
-* different output structures
-* different evaluation criteria
+1. With a real LLM provider, using `GROQ_API_KEY`.
+2. Without external services, using deterministic fallback logic.
 
-If the external API is unavailable during the presentation, the deterministic fallback keeps the application usable.
+This means the application remains functional even if the external API is unavailable during the presentation.
